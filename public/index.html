@@ -1,1 +1,59 @@
-
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mini World Blueprint AI</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#29243a;background:#f8f5ff}
+body{margin:0;padding:20px}.wrap{max-width:900px;margin:auto}.hero{background:#fff;border:1px solid #e8defb;border-radius:20px;padding:22px;margin-bottom:16px}
+h1{margin:0 0 8px;color:#6137a4;font-size:25px}.muted{color:#716b7d;font-size:14px}
+.panel{background:white;border:1px solid #e8defb;border-radius:18px;padding:18px;margin:14px 0}
+button{border:0;border-radius:12px;background:#7548b8;color:white;padding:12px 17px;font-weight:650;font-size:15px}
+button:disabled{opacity:.5}input[type=file]{width:100%;padding:12px 0}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.status{white-space:pre-wrap;margin-top:12px;color:#5d4b76}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:9px 7px;border-bottom:1px solid #eee;text-align:left}input[type=number],input[type=text]{width:100%;box-sizing:border-box;padding:8px;border:1px solid #ddd;border-radius:8px}
+.item{border-top:1px solid #eee;padding:12px 0}.grid{display:grid;grid-template-columns:1.2fr .6fr .6fr;gap:8px}
+.small{font-size:12px;color:#777}.hidden{display:none}
+</style></head>
+<body><main class="wrap">
+<div class="hero"><h1>Mini World Blueprint AI</h1><div>Đọc ảnh công thức và tính nguyên liệu chế tạo nhiều tầng.</div><p class="muted">Chọn ảnh danh sách vật phẩm và ảnh công thức. AI sẽ trích xuất, em kiểm tra lại rồi bấm tính nguyên liệu.</p></div>
+<section class="panel">
+<h3>1. Tải ảnh lên</h3>
+<input id="files" type="file" accept="image/*" multiple>
+<div class="muted" id="fileInfo">Có thể chọn nhiều ảnh cùng lúc (tối đa 60 ảnh mỗi lượt).</div>
+<div class="actions"><button id="analyze">Phân tích ảnh bằng AI</button></div><div id="status" class="status"></div>
+</section>
+<section class="panel hidden" id="editPanel">
+<h3>2. Kiểm tra dữ liệu AI đọc được</h3><div class="muted">Sửa tên, số lượng cần, số sản phẩm mỗi lần chế tạo nếu AI đọc sai. Thêm công thức/nguyên liệu còn thiếu bằng cách gửi lại ảnh rõ hơn.</div>
+<div id="items"></div>
+<div class="actions"><button id="calculate">Tính nguyên liệu thô</button><button id="csv" type="button">Tải CSV</button></div>
+</section>
+<section class="panel hidden" id="resultPanel"><h3>3. Kết quả</h3><div id="results"></div></section>
+</main>
+<script>
+let items=[];
+const $=id=>document.getElementById(id);
+$("files").addEventListener("change",()=>{$("fileInfo").textContent=`Đã chọn ${$("files").files.length} ảnh.`});
+$("analyze").onclick=async()=>{
+ const files=[...$("files").files]; if(!files.length){$("status").textContent="Em hãy chọn ảnh trước nhé.";return}
+ $("analyze").disabled=true;$("status").textContent="Đang gửi ảnh và đọc công thức... Quá trình có thể mất một chút thời gian.";
+ try{
+  const fd=new FormData();files.forEach(f=>fd.append("images",f));
+  const r=await fetch("/api/analyze",{method:"POST",body:fd});const d=await r.json();if(!r.ok)throw Error(d.error||"Có lỗi");
+  items=d.items||[];renderItems();$("editPanel").classList.remove("hidden");$("status").textContent=`Đã phân tích ${d.imageCount} ảnh, tìm thấy ${items.length} mục. Em kiểm tra dữ liệu trước khi tính nhé.`;
+ }catch(e){$("status").textContent="Lỗi: "+e.message}
+ finally{$("analyze").disabled=false}
+};
+function renderItems(){
+ $("items").innerHTML=items.map((x,i)=>`<div class="item"><b>${i+1}. ${esc(x.name||"Chưa rõ tên")}</b><div class="grid"><label class="small">Tên<input data-i="${i}" data-k="name" type="text" value="${attr(x.name||"")}"></label><label class="small">Cần dùng<input data-i="${i}" data-k="required" type="number" min="0" value="${x.required??""}" placeholder="N/A"></label><label class="small">Ra mỗi lần<input data-i="${i}" data-k="outputPerCraft" type="number" min="1" value="${x.outputPerCraft||1}"></label></div><div class="small">Nguyên liệu / lần chế tạo: ${(x.ingredients||[]).map(a=>`${esc(a.name)} × ${a.quantity}`).join(", ")||"Chưa có công thức"}</div>${x.notes?`<div class="small">Ghi chú: ${esc(x.notes)}</div>`:""}</div>`).join("");
+ $("items").querySelectorAll("input").forEach(el=>el.onchange=()=>{const i=+el.dataset.i,k=el.dataset.k;items[i][k]=k==="name"?el.value:(el.value===""?null:Number(el.value))});
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function attr(s){return esc(s)}
+$("calculate").onclick=async()=>{
+ const r=await fetch("/api/calculate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items})});const d=await r.json();if(!r.ok){$("status").textContent=d.error;return}
+ $("resultPanel").classList.remove("hidden");
+ $("results").innerHTML=`<h4>Nguyên liệu thô cần chuẩn bị</h4>${d.rawMaterials.length?`<table><tr><th>Vật phẩm</th><th>Số lượng</th></tr>${d.rawMaterials.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.quantity}</td></tr>`).join("")}</table>`:"Không có dữ liệu số lượng yêu cầu."}<h4>Số lần chế tạo</h4>${d.craftCounts.length?`<table><tr><th>Vật phẩm</th><th>Số lần</th></tr>${d.craftCounts.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.count}</td></tr>`).join("")}</table>`:"Không có công thức tầng."}${d.warnings.map(w=>`<p class="small">${esc(w)}</p>`).join("")}`;
+};
+$("csv").onclick=()=>{const rows=[["Tên","Số lượng yêu cầu","Sản phẩm mỗi lần","Nguyên liệu"] ,...items.map(x=>[x.name,x.required,x.outputPerCraft,(x.ingredients||[]).map(a=>`${a.name} x ${a.quantity}`).join("; ")])];const csv=rows.map(r=>r.map(v=>'"'+String(v??"").replaceAll('"','""')+'"').join(",")).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"}));a.download="mini-world-cong-thuc.csv";a.click();URL.revokeObjectURL(a.href)};
+</script></body></html>
