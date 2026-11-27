@@ -11,7 +11,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
 
 const API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.8-flash";
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, apiKeyConfigured: Boolean(API_KEY) });
@@ -39,29 +39,8 @@ Quy tắc:
 - Không tự đoán chữ/số bị mờ. Nếu không chắc, ghi notes.
 - Nếu một ảnh có nhiều công thức, tạo một item cho mỗi sản phẩm.
 - Giữ nguyên tên vật phẩm tiếng Việt nếu đọc được.`;
-      const parts = [{ text: prompt }];
-      for (const file of batch) {
-        parts.push({ inlineData: { mimeType: file.mimetype, data: file.buffer.toString("base64") } });
-      }
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-        })
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        const message = payload?.error?.message || `Gemini API lỗi (${response.status})`;
-        return res.status(502).json({ error: message });
-      }
-      const raw = payload?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
-      let parsed;
-      try { parsed = JSON.parse(raw); }
-      catch { return res.status(502).json({ error: "AI trả về dữ liệu chưa đúng định dạng JSON. Em thử chia ảnh thành nhóm nhỏ hơn nhé.", raw }); }
-      if (Array.isArray(parsed.items)) allItems.push(...parsed.items);
-    }
+    if (Array.isArray(parsed.items)) allItems.push(...parsed.items);
+    
     res.json({ items: allItems, imageCount: images.length });
   } catch (err) {
     res.status(500).json({ error: err.message || "Có lỗi khi phân tích ảnh." });
